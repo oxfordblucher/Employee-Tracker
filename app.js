@@ -3,6 +3,11 @@ const inquirer = require("inquirer");
 const cTable = require("console.table");
 require('dotenv').config();
 
+let employeeList = [];
+let chosenID = "";
+let roleArray = [];
+let newRoleID = "";
+
 const connection = mysql.createConnection({
     host: "localhost",
     port: 3306,
@@ -96,17 +101,20 @@ function viewData() {
             switch(answer.viewType) {
                 case "View department(s)":
                     connection.query("SELECT * FROM department", function(err, res) {
-                        console.table(res)
+                        console.table(res);
+                        runApp();
                     })
                     break;
                 case "View role(s)":
-                    connection.query("SELECT * FROM role", function(err, res) {
+                    connection.query("SELECT role.id as Role_ID, department.name as Department, department.id as Dept_ID, role.title as Role, role.salary as Salary FROM role INNER JOIN department ON role.department_id = department.id", function(err, res) {
                         console.table(res);
+                        runApp();
                     })
                     break;
                 case "View employee(s)":
-                    connection.query("SELECT * FROM employee", function(err, res) {
+                    connection.query("SELECT employee.id as Employee_ID, employee.first_name as First, employee.last_name as Last, department.name as Department, department.id as Dept_ID, role.title as Role, role.id as Role_ID, role.salary as Salary, employee.manager_id as Manager_ID FROM ((employee INNER JOIN role on employee.role_id = role.id) INNER JOIN department on role.department_id = department.id);", function(err, res) {
                         console.table(res);
+                        runApp();
                     })
                     break;
                 case "Previous menu":
@@ -114,30 +122,7 @@ function viewData() {
                     break;
             }
         })
-}
-
-function updateData() {
-    connection.query("SELECT * FROM employee", function(err,res) {
-        console.table(res);
-        console.log(res);
-
-        const employeeList = []
-        for (let i = 0; i < res.length; i++) {
-            const employeeName = `${res.first_name} ${res.last_name}`;
-            employeeList.push(employeeName);
-        }
-
-
-        inquirer
-            .prompt({
-                name: "who",
-                type: "list",
-                message: "Who are you updating?",
-                choices: (employeeList)
-            })
-    })
-};
-            
+}          
 
 function newDept() {
     inquirer
@@ -149,12 +134,13 @@ function newDept() {
         .then(function(answer) {
             connection.query("INSERT INTO department (name) VALUES (?)", answer.deptName, function(err, res) {
                 console.log(`${answer.deptName} department added!`);
+                runApp();
             })
         });
 }
 
 function newRole() {
-    const deptArray = [];
+    let deptArray = [];
 
     connection.query("SELECT name FROM department", function(err, res) {
         for (let i = 0; i < res.length; i++) {
@@ -210,7 +196,7 @@ function newRole() {
 }
 
 function newEmployee() {
-    const roleArray = [];
+    let roleArray = [];
 
     connection.query("SELECT title FROM role", function(err, res) {
         for (let i = 0; i < res.length; i++) {
@@ -270,15 +256,87 @@ function newEmployee() {
     })
 }
 
-function updateTitle() {
-    inquirer
-        .prompt({
-            name: "newJob",
-            type: "input",
-            message: "What is "
-        })
-}
+function updateData() {
+    connection.query("SELECT employee.id as Employee_ID, department.name as Department, role.title as Role, employee.first_name as First, employee.last_name as Last, role.salary as Salary, employee.manager_id as Manager_ID FROM ((employee INNER JOIN role on employee.role_id = role.id) INNER JOIN department on role.department_id = department.id);", function(err,res) {
+        console.table(res);
 
-function updateMgr() {
+        for (let i = 0; i < res.length; i++) {
+            const employee = {
+                name: `${res[i].First} ${res[i].Last}`,
+                id: parseInt(i + 1),
+                role: res[i].Role,
+                dept: res[i].Department
+            }
+            employeeList.push(employee);
+        }
 
+        inquirer
+            .prompt({
+                name: "who",
+                type: "list",
+                message: "Who are you updating?",
+                choices: (employeeList)
+            })
+            .then(function(answers) {
+                for (let i = 0; i < employeeList.length; i++) {
+                    if(answers.who === employeeList[i].name) {
+                        chosenID = employeeList[i].id;
+                    };
+                }
+
+                inquirer
+                    .prompt({
+                        name: "updateType",
+                        type: "list",
+                        message: "Change role or manager?",
+                        choices: ['role', 'manager']
+                    })
+                    .then(function(answer) {
+                        switch(answer.updateType) {
+                            case "role":
+                                updateTitle(chosenID);
+                                break;
+                            case "manager":
+                                updateMgr(chosenID);
+                                break;
+                        }
+                    })
+            })
+    })
+};
+
+function updateTitle(id) {
+    connection.query("SELECT title FROM role", function(err, res) {
+        if (err) throw err;
+        for (let i = 0; i < res.length; i++) {
+            const newJob = {
+                name: res[i].title,
+                id: parseInt(i+1)
+            }
+            roleArray.push(newJob);
+        }
+
+        inquirer
+            .prompt({
+                name: "newJob",
+                type: "list",
+                message: "What is their new role?",
+                choices: (roleArray)
+            })
+            .then(function(choice) {
+                for (let i = 0; i < roleArray.length; i++) {
+                    if (choice.newJob === roleArray[i].name) {
+                        newRoleID = roleArray[i].id
+                    }
+                }
+                connection.query("UPDATE employee SET ? WHERE ?", [
+                    {role_id: newRoleID},
+                    {id: id}
+                ], function(err) {
+                    if (err) throw err;
+                    console.log("Successfully updated employee role!");
+                    runApp();
+                })
+            })
+    })
 }
